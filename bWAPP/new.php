@@ -5,7 +5,7 @@ error_reporting(0);
 $conn = mysqli_connect("localhost", "root", "root", "test");
 
 if (!$conn) {
-    die("DB Error");
+    die("DB Errorr");
 }
 
 $user = $_GET['user'];
@@ -15,7 +15,7 @@ $query = "SELECT * FROM users WHERE username = '$user' AND password = '$pass'";
 $result = mysqli_query($conn, $query);
 
 if (mysqli_num_rows($result) > 0) {
-    echo "Welcome " . $user;
+    echo "Welcome bruh " . $user;
 } else {
     echo "Login failed";
 }
