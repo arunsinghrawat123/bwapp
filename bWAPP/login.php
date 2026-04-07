@@ -270,3 +270,4 @@ if(isset($_POST["form"]))
 </body>
 
 </html>"<!-- security audit -->" 
+"<!-- test $(date) -->" 
