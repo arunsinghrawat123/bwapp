@@ -162,19 +162,17 @@ function sqli($data)
 if(isset($_GET["movie"]))
 {
 
-    $id = $_GET["movie"];
+    $id = filter_input(INPUT_GET, "movie", FILTER_VALIDATE_INT);
 
-    $sql = "SELECT * FROM movies";
-
-    // If the user selects a movie
-    if($id)
-    {
-
-        $sql.= " WHERE id = " . sqli($id);
-
+    if ($id === false || $id === null) {
+        die("Invalid movie ID");
     }
 
-    $recordset = mysqli_query($link, $sql);
+    $sql = "SELECT * FROM movies WHERE id = ?";
+    $stmt = $link->prepare($sql);
+    $stmt->bind_param("i", $id);
+    $stmt->execute();
+    $recordset = $stmt->get_result();
 
     if(!$recordset)
     {

@@ -23,8 +23,18 @@ include("connect_i.php");
 
 $message = "";
 
+// Generate CSRF token if not exists
+if(empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
+// Validate CSRF token before processing state-changing operations
 if(isset($_REQUEST["action"]) && isset($_REQUEST["password_new"]) && isset($_REQUEST["password_conf"]))
 {
+    // Validate CSRF token
+    if(!isset($_REQUEST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_REQUEST['csrf_token'])) {
+        die('CSRF token validation failed');
+    }
 
     $password_new = $_REQUEST["password_new"];
     $password_conf = $_REQUEST["password_conf"];
@@ -209,6 +219,7 @@ if(isset($_REQUEST["action"]) && isset($_REQUEST["password_new"]) && isset($_REQ
     <p>Change your password.</p>
 
     <form action="<?php echo($_SERVER["SCRIPT_NAME"]); ?>" method="GET">
+        <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>" />
 
 <?php
 
