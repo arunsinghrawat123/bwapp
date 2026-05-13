@@ -21,11 +21,10 @@ session_start();
 $message = "";
 $strong = false;
 
-$secret = "PGk+PHA+U2VjdXJlIHRoZSB3b3JsZC4gRmlnaHQgY3JpbWUgYW5kIHNlbnNlbGVzcyB2aW9sZW5j";
-$secret.= "ZS48YnIgLz5Eb24ndCBsZXQgVEhFTSB0YWtlIHlvdXIgbWluZCBhbmQgc291bC48YnIgLz5Mb3Zl";
-$secret.= "IGVhY2ggb3RoZXIuPGJyIC8+WW91IGhhdmUgYSBtaXNzaW9uISBTcHJlYWQgdGhlc2Ugd29yZHMu";
-$secret.= "Li48L3A+PHA+T2ggeWVhaC4uLiBJIHJlYWxseSBsb3ZlIHRob3NlIGhlcm8gbW92aWVzIDopPC9w";
-$secret.= "PjxwPlJlZ2FyZHM8L3A+PHA+TWFsaWs8L3A+PC9pPg==";
+$secret = getenv('SECRET_MESSAGE');
+if ($secret === false) {
+    $secret = "";
+}
 
 /* Debugging
 echo $_SESSION["top_security_nossl"];
