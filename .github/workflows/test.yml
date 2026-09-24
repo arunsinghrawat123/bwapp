@@ -1,0 +1,123 @@
+name: OWASP Dependency-Check
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  schedule:
+    - cron: "0 3 * * 1"       # weekly scan every Monday 03:00 UTC
+  workflow_dispatch:           # allow manual runs from the Actions tab
+
+permissions:
+  contents: read
+  security-events: write       # needed to upload SARIF to the Security tab
+
+env:
+  DC_DATA_DIR: ${{ github.workspace }}/.dependency-check-data   # NVD database location (cached)
+  REPORT_DIR: dependency-check-reports
+  CVSS_THRESHOLD: 7            # fail build if any CVSS score >= 7 (High/Critical)
+
+jobs:
+  dependency-check:
+    name: OWASP Dependency-Check Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Get the source code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Dependency-Check needs Java 11+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      # ---------------------------------------------------------------
+      # OPTIONAL: build your project first so dependencies are resolved.
+      # Example for Maven:  mvn -B package -DskipTests
+      # Example for Node:   npm ci
+      # ---------------------------------------------------------------
+
+      # 3. Download the latest Dependency-Check CLI release
+      - name: Install Dependency-Check CLI
+        run: |
+          VERSION=$(curl -s https://api.github.com/repos/dependency-check/DependencyCheck/releases/latest | jq -r '.tag_name' | sed 's/^v//')
+          echo "Installing Dependency-Check v$VERSION"
+          curl -sSL -o dc.zip "https://github.com/dependency-check/DependencyCheck/releases/download/v${VERSION}/dependency-check-${VERSION}-release.zip"
+          unzip -q dc.zip -d $HOME
+          echo "$HOME/dependency-check/bin" >> $GITHUB_PATH
+
+      # 4. Cache the NVD database (refreshed once a day) to avoid
+      #    slow downloads and NVD API rate limits
+      - name: Get date for cache key
+        id: date
+        run: echo "today=$(date +%Y-%m-%d)" >> $GITHUB_OUTPUT
+
+      - name: Cache NVD database
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.DC_DATA_DIR }}
+          key: dependency-check-data-${{ steps.date.outputs.today }}
+          restore-keys: |
+            dependency-check-data-
+
+      # 5. Run the scan (don't stop yet, so reports are always uploaded)
+      - name: Run OWASP Dependency-Check
+        id: dc-scan
+        continue-on-error: true
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        run: |
+          mkdir -p "$REPORT_DIR"
+          dependency-check.sh \
+            --project "${{ github.event.repository.name }}" \
+            --scan . \
+            --exclude "**/.git/**" \
+            --exclude "**/.dependency-check-data/**" \
+            --data "$DC_DATA_DIR" \
+            --nvdApiKey "$NVD_API_KEY" \
+            --disableOssIndex \
+            --format HTML \
+            --format JSON \
+            --format SARIF \
+            --out "$REPORT_DIR" \
+            --failOnCVSS "$CVSS_THRESHOLD"
+
+      # 6. Upload reports as downloadable artifacts
+      - name: Upload Dependency-Check reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-check-reports
+          path: ${{ env.REPORT_DIR }}
+          retention-days: 30
+
+      # 7. Show findings in the GitHub Security tab
+      - name: Upload SARIF to GitHub Security tab
+        if: always() && hashFiles('dependency-check-reports/dependency-check-report.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ env.REPORT_DIR }}/dependency-check-report.sarif
+
+      # 8. Short summary on the job summary page
+      - name: Vulnerability summary
+        if: always() && hashFiles('dependency-check-reports/dependency-check-report.json') != ''
+        run: |
+          REPORT="$REPORT_DIR/dependency-check-report.json"
+          echo "## OWASP Dependency-Check Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Severity | Count |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          for sev in CRITICAL HIGH MEDIUM LOW; do
+            count=$(jq "[.dependencies[]?.vulnerabilities[]? | select((.severity|ascii_upcase)==\"$sev\")] | length" "$REPORT")
+            echo "| $sev | $count |" >> $GITHUB_STEP_SUMMARY
+          done
+
+      # 9. Security gate: fail the pipeline if the scan found issues
+      - name: Fail if vulnerabilities exceed threshold
+        if: steps.dc-scan.outcome == 'failure'
+        run: |
+          echo "::error::Dependencies with CVSS >= $CVSS_THRESHOLD found (or the scan failed). See the dependency-check-reports artifact."
+          exit 1
